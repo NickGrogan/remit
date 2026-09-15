@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>REMIT Insider — UK Power Outage Monitor</title>
+    <meta name="description" content="Real-time breaking news terminal for UK power plant outages and returns to service. Monitors Elexon REMIT data for energy traders." />
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        terminal: {
+                            bg: '#0a0e17',
+                            surface: '#111827',
+                            border: '#1e293b',
+                            accent: '#f59e0b',
+                            flash: '#ef4444',
+                            major: '#f97316',
+                            minor: '#3b82f6',
+                            return: '#10b981',
+                            muted: '#64748b',
+                            text: '#e2e8f0',
+                        },
+                    },
+                    fontFamily: {
+                        mono: ['"JetBrains Mono"', '"Fira Code"', 'Consolas', 'monospace'],
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                    animation: {
+                        'flash-pulse': 'flash-pulse 1.5s ease-in-out infinite',
+                        'slide-in': 'slide-in 0.4s ease-out',
+                        'ticker-scroll': 'ticker-scroll 30s linear infinite',
+                        'glow': 'glow 2s ease-in-out infinite alternate',
+                        'fade-in': 'fade-in 0.6s ease-out',
+                    },
+                    keyframes: {
+                        'flash-pulse': {
+                            '0%, 100%': { opacity: '1', boxShadow: '0 0 20px rgba(239,68,68,0.4)' },
+                            '50%': { opacity: '0.7', boxShadow: '0 0 40px rgba(239,68,68,0.8)' },
+                        },
+                        'slide-in': {
+                            '0%': { transform: 'translateX(-20px)', opacity: '0' },
+                            '100%': { transform: 'translateX(0)', opacity: '1' },
+                        },
+                        'ticker-scroll': {
+                            '0%': { transform: 'translateX(100%)' },
+                            '100%': { transform: 'translateX(-100%)' },
+                        },
+                        'glow': {
+                            '0%': { boxShadow: '0 0 5px rgba(245,158,11,0.2)' },
+                            '100%': { boxShadow: '0 0 20px rgba(245,158,11,0.5)' },
+                        },
+                        'fade-in': {
+                            '0%': { opacity: '0', transform: 'translateY(8px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        },
+                    },
+                },
+            },
+        }
+    </script>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+    <style>
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0a0e17; }
+        ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #334155; }
+
+        /* Scanline effect overlay */
+        .scanlines::after {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(0, 0, 0, 0.03) 2px,
+                rgba(0, 0, 0, 0.03) 4px
+            );
+            z-index: 9999;
+        }
+
+        /* Flash banner */
+        .flash-banner {
+            background: linear-gradient(90deg, #7f1d1d, #dc2626, #7f1d1d);
+            background-size: 200% 100%;
+            animation: gradient-shift 3s ease infinite;
+        }
+        @keyframes gradient-shift {
+            0%, 100% { background-position: 0% 0%; }
+            50% { background-position: 100% 0%; }
+        }
+
+        /* Severity border glow */
+        .alert-card-flash { border-left: 3px solid #ef4444; box-shadow: inset 4px 0 12px -4px rgba(239,68,68,0.3); }
+        .alert-card-major { border-left: 3px solid #f97316; box-shadow: inset 4px 0 12px -4px rgba(249,115,22,0.2); }
+        .alert-card-minor { border-left: 3px solid #3b82f6; box-shadow: inset 4px 0 12px -4px rgba(59,130,246,0.15); }
+        .alert-card-return { border-left: 3px solid #10b981; box-shadow: inset 4px 0 12px -4px rgba(16,185,129,0.2); }
+
+        /* Ticker tape */
+        .ticker-tape {
+            display: flex;
+            gap: 3rem;
+            white-space: nowrap;
+        }
+
+        /* Connection status dot */
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+        .status-dot.connected { background: #10b981; box-shadow: 0 0 6px #10b981; }
+        .status-dot.disconnected { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
+        .status-dot.loading { background: #f59e0b; animation: pulse 1.5s infinite; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        /* Noise texture */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            opacity: 0.015;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+            pointer-events: none;
+            z-index: 9998;
+        }
+    </style>
+</head>
+
+<body class="bg-terminal-bg text-terminal-text font-sans scanlines min-h-screen flex flex-col">
+
+    <!-- ═══════════════ FLASH OVERLAY ═══════════════ -->
+    <div id="flash-overlay" class="hidden fixed inset-x-0 top-0 z-50 flash-banner py-3 px-6 animate-flash-pulse">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <span class="text-2xl animate-pulse">⚡</span>
+                <div>
+                    <span class="font-mono font-bold text-white text-sm tracking-widest">FLASH ALERT</span>
+                    <p id="flash-text" class="text-white font-semibold text-lg"></p>
+                </div>
+            </div>
+            <button onclick="dismissFlash()" class="text-white/70 hover:text-white text-xl font-bold px-3 py-1 hover:bg-white/10 rounded transition-colors">✕</button>
+        </div>
+    </div>
+
+    <!-- ═══════════════ HEADER BAR ═══════════════ -->
+    <header class="bg-terminal-surface border-b border-terminal-border px-4 py-2 flex-shrink-0">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <!-- Left: Brand -->
+            <div class="flex items-center gap-3">
+                <div class="bg-terminal-accent/10 border border-terminal-accent/30 rounded-lg px-3 py-1.5 animate-glow">
+                    <span class="font-mono font-extrabold text-terminal-accent text-lg tracking-tight">REMIT</span>
+                    <span class="font-mono font-light text-terminal-accent/70 text-lg ml-1">INSIDER</span>
+                </div>
+                <div class="hidden sm:block border-l border-terminal-border pl-3">
+                    <span class="text-[10px] font-mono text-terminal-muted uppercase tracking-[0.2em]">UK Generation · Real-Time</span>
+                </div>
+            </div>
+
+            <!-- Center: Connection -->
+            <div class="flex items-center gap-4">
+                <div class="flex items-center gap-2">
+                    <div id="connection-dot" class="status-dot loading"></div>
+                    <span id="connection-text" class="text-xs font-mono text-terminal-muted">CONNECTING</span>
+                </div>
+            </div>
+
+            <!-- Right: Clock -->
+            <div class="flex items-center gap-4">
+                <div class="text-right">
+                    <div id="clock" class="font-mono font-bold text-base text-terminal-text tabular-nums tracking-wider">--:--:--</div>
+                    <div id="date-display" class="font-mono text-[10px] text-terminal-muted tracking-widest">--- -- ----</div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- ═══════════════ TICKER TAPE ═══════════════ -->
+    <div class="bg-terminal-bg border-b border-terminal-border overflow-hidden flex-shrink-0 h-8 flex items-center">
+        <div class="bg-terminal-accent/20 px-2 py-1 flex-shrink-0 border-r border-terminal-border">
+            <span class="font-mono text-[10px] font-bold text-terminal-accent tracking-widest">LIVE</span>
+        </div>
+        <div class="overflow-hidden flex-1 relative">
+            <div id="ticker-tape" class="ticker-tape animate-ticker-scroll px-4">
+                <span class="text-xs font-mono text-terminal-muted">Waiting for data...</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ STATS RIBBON ═══════════════ -->
+    <div class="bg-terminal-surface/50 border-b border-terminal-border px-4 py-2.5 flex-shrink-0">
+        <div class="max-w-7xl mx-auto grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+                    <span class="text-red-400 text-lg">⚡</span>
+                </div>
+                <div>
+                    <div class="text-[10px] font-mono text-terminal-muted uppercase tracking-wider">MW Offline</div>
+                    <div id="stat-mw" class="font-mono font-bold text-xl text-red-400 tabular-nums">—</div>
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
+                    <span class="text-orange-400 text-lg">🔥</span>
+                </div>
+                <div>
+                    <div class="text-[10px] font-mono text-terminal-muted uppercase tracking-wider">Active Outages</div>
+                    <div id="stat-outages" class="font-mono font-bold text-xl text-orange-400 tabular-nums">—</div>
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-terminal-flash/10 border border-terminal-flash/20 flex items-center justify-center">
+                    <span class="text-terminal-flash text-lg">🚨</span>
+                </div>
+                <div>
+                    <div class="text-[10px] font-mono text-terminal-muted uppercase tracking-wider">Flash Alerts</div>
+                    <div id="stat-flash" class="font-mono font-bold text-xl text-terminal-flash tabular-nums">—</div>
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-terminal-accent/10 border border-terminal-accent/20 flex items-center justify-center">
+                    <span class="text-terminal-accent text-lg">📡</span>
+                </div>
+                <div>
+                    <div class="text-[10px] font-mono text-terminal-muted uppercase tracking-wider">Last Poll</div>
+                    <div id="stat-poll" class="font-mono font-bold text-sm text-terminal-accent tabular-nums">—</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ MAIN CONTENT ═══════════════ -->
+    <main class="flex-1 overflow-hidden flex">
+        <!-- Alert Feed -->
+        <div class="flex-1 flex flex-col min-w-0">
+            <!-- Feed Header -->
+            <div class="px-4 py-2 border-b border-terminal-border bg-terminal-surface/30 flex items-center justify-between flex-shrink-0">
+                <div class="flex items-center gap-2">
+                    <span class="text-xs font-mono font-bold text-terminal-accent tracking-widest uppercase">Breaking News Feed</span>
+                    <span id="alert-count-badge" class="bg-terminal-accent/20 text-terminal-accent font-mono text-[10px] font-bold px-2 py-0.5 rounded-full">0</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="filterAlerts('all')" class="filter-btn active text-[10px] font-mono px-2 py-1 rounded bg-terminal-accent/20 text-terminal-accent border border-terminal-accent/30 hover:bg-terminal-accent/30 transition-colors" data-filter="all">ALL</button>
+                    <button onclick="filterAlerts('flash')" class="filter-btn text-[10px] font-mono px-2 py-1 rounded bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-colors" data-filter="flash">FLASH</button>
+                    <button onclick="filterAlerts('trip')" class="filter-btn text-[10px] font-mono px-2 py-1 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition-colors" data-filter="trip">TRIPS</button>
+                    <button onclick="filterAlerts('return')" class="filter-btn text-[10px] font-mono px-2 py-1 rounded bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20 transition-colors" data-filter="return">RETURNS</button>
+                </div>
+            </div>
+
+            <!-- Scrolling Alert List -->
+            <div id="alert-feed" class="flex-1 overflow-y-auto px-4 py-2 space-y-1.5">
+                <div class="flex items-center justify-center h-full">
+                    <div class="text-center">
+                        <div class="animate-pulse text-4xl mb-3">📡</div>
+                        <p class="font-mono text-terminal-muted text-sm">Connecting to Elexon REMIT feed...</p>
+                        <p class="font-mono text-terminal-muted/50 text-xs mt-1">Fetching latest outage data</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Side Panel: Details -->
+        <div id="side-panel" class="hidden w-96 border-l border-terminal-border bg-terminal-surface/50 flex-shrink-0 overflow-y-auto">
+            <div class="p-4">
+                <div class="flex items-center justify-between mb-4">
+                    <span class="font-mono font-bold text-xs text-terminal-accent tracking-widest uppercase">Alert Detail</span>
+                    <button onclick="closeSidePanel()" class="text-terminal-muted hover:text-terminal-text transition-colors">✕</button>
+                </div>
+                <div id="side-detail"></div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ═══════════════ FOOTER ═══════════════ -->
+    <footer class="bg-terminal-surface border-t border-terminal-border px-4 py-1.5 flex-shrink-0">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <span class="text-[10px] font-mono text-terminal-muted/50">REMIT INSIDER v1.0 · Elexon BMRS Data · For informational purposes only</span>
+            <span class="text-[10px] font-mono text-terminal-muted/50">Data source: data.elexon.co.uk</span>
+        </div>
+    </footer>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
